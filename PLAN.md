@@ -77,16 +77,36 @@ Commit layout keeps each piece droppable by upstream: detection, doctor, flag
 alias, docs as separate conventional commits on `feat/podman` (cut from
 `upstream/main`, no PLAN.md).
 
-### Phase 3 — implement (sonnet, per-step specs)
+### Phase 3 — implement (sonnet, per-step specs) — DONE
 
-Small conventional commits, mergeable with upstream, no drive-by refactors.
-Steps written after Phase 2; each step gets its own spec + review by architect.
+Landed on `feat/podman` (4 commits, each droppable by upstream):
 
-### Phase 4 — verify the hard floor
+- `feat(container): support podman via its Docker-compatible socket` —
+  socket auto-detection (macOS machine glob, Linux rootless/rootful),
+  `--runtime podman` / `MOAT_RUNTIME=podman` / `runtime: podman`,
+  `DockerRuntime.IsPodmanEngine` (Components-based), tests.
+- `docs: document podman as a supported container runtime` — installation,
+  runtimes concept, comparison, CLI/env/moat.yaml references,
+  troubleshooting, README.
+- `feat(doctor): identify podman behind the docker runtime` —
+  `Available: docker (podman), …`; gVisor line no longer trusts podman's
+  runtime listing (prints "reported by engine — unverified").
+- `docs(changelog): add podman support entry` (`#NNN` placeholder to fill
+  at PR time).
 
-`moat run --grant github` under podman: container env contains only moat
-placeholder values (`ghp_moatProxyInjectedPlaceholder…`) and `gh api user`
-succeeds via proxy injection.
+End-to-end verified with the fork binary (`bin/moat`, not the dev install):
+`moat run --runtime podman -- <cmd>` with no `DOCKER_HOST` probes, finds the
+machine socket, and completes (`container=podman`). Build/vet/`make test-unit`
+(race) clean. `/code-review` (workflow, high effort) run before push.
+
+### Phase 4 — verify the hard floor — DONE
+
+Verified under podman with the github grant: container env contains only
+`GH_TOKEN=ghp_moatProxyInjectedPlaceholder000000000000`, and `gh api user`
+inside the container returned `grinnellian` via proxy injection. Bonus
+finding: the known `git`-over-proxy CONNECT 407 (ai-lindale INFRA-013)
+reproduces identically under the Apple runtime — moat-general, not podman.
+Reported on ai-lindale#95 (comment 4899248852).
 
 ### Phase 5 — upstream
 
@@ -96,9 +116,13 @@ this fork as Lindalë's pinned source with the delta isolated.
 
 ## Current blockers
 
-- `gh` auth token on this machine went invalid (was valid earlier 2026-07-06).
-  Blocks: creating the fork, pushing, posting to ai-lindale#95, opening the PR.
-  Operator action: `gh auth login -h github.com`.
+- ~~gh auth invalid~~ resolved: operator supplied a fine-grained PAT
+  (Issues write works — #95 comment posted; `moat grant github` re-granted).
+- **Fork creation**: fine-grained PATs cannot create forks (GitHub API 403,
+  hard limitation). Operator action: fork majorcontext/moat → grinnellian in
+  the GitHub UI/app, or supply a classic token. Push + PR follow immediately.
+- Note: `moat`'s credential store had failed with "encryption key changed"
+  after the token rotation; re-granting fixed it.
 
 ## Environment notes (this machine)
 
