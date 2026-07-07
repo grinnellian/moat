@@ -108,21 +108,40 @@ finding: the known `git`-over-proxy CONNECT 407 (ai-lindale INFRA-013)
 reproduces identically under the Apple runtime — moat-general, not podman.
 Reported on ai-lindale#95 (comment 4899248852).
 
-### Phase 5 — upstream
+### Phase 5 — upstream — PR OPEN
 
-PR against majorcontext/moat (no existing podman issues/PRs as of 2026-07-06 —
-verified via search, clear field). If upstream declines or goes quiet, document
-this fork as Lindalë's pinned source with the delta isolated.
+**[majorcontext/moat#435](https://github.com/majorcontext/moat/pull/435)** —
+`feat: support podman via its Docker-compatible socket` (8 commits from
+`grinnellian:feat/podman`; CHANGELOG `#NNN` filled with 435).
+
+Pre-PR hardening: a high-effort multi-agent `/code-review` produced 10
+confirmed findings; all fixed in three review-response commits:
+
+- `fix(container): harden podman detection paths` — forced `--runtime docker`
+  no longer silently lands on podman sockets; probe errors surfaced (e.g.
+  gVisor-required) instead of "no socket found"; `IsPodmanEngine` returns
+  `(bool, error)` and doesn't cache transient failures; one-time warn when
+  sandbox trusts podman's unverified runsc listing; test hermeticity seam;
+  fake-engine tests for both DOCKER_HOST verification directions.
+- `fix(doctor): three-state engine identity; surface idle podman sockets` —
+  no fail-open on ping timeout; points at an existing podman socket when
+  Docker is unreachable (stat only, no dialing).
+- `fix(run): persist the Docker endpoint per run and reconnect to it` —
+  metadata records `docker_host`; `stop`/`logs`/reconciliation reconnect via
+  a host-pinned pool runtime. Fixes the wrong-engine/orphaned-container hole
+  (which pre-existed upstream for Rancher Desktop). Empirically validated:
+  podman run stopped correctly from a fresh process with a live real-Docker
+  daemon standing by as the trap.
+
+Next: watch PR review (upstream's claude-review bot reviews every push).
+If upstream declines or goes quiet, this fork becomes Lindalë's pinned source
+with the delta clearly isolated (every commit is droppable).
 
 ## Current blockers
 
-- ~~gh auth invalid~~ resolved: operator supplied a fine-grained PAT
-  (Issues write works — #95 comment posted; `moat grant github` re-granted).
-- **Fork creation**: fine-grained PATs cannot create forks (GitHub API 403,
-  hard limitation). Operator action: fork majorcontext/moat → grinnellian in
-  the GitHub UI/app, or supply a classic token. Push + PR follow immediately.
-- Note: `moat`'s credential store had failed with "encryption key changed"
-  after the token rotation; re-granting fixed it.
+None. (Resolved along the way: gh token rotation — web-flow OAuth login fixed
+push/PR/fork limits that a fine-grained PAT hit; moat's credential store
+"encryption key changed" — fixed by re-granting github.)
 
 ## Environment notes (this machine)
 
