@@ -108,7 +108,7 @@ finding: the known `git`-over-proxy CONNECT 407 (ai-lindale INFRA-013)
 reproduces identically under the Apple runtime — moat-general, not podman.
 Reported on ai-lindale#95 (comment 4899248852).
 
-### Phase 5 — upstream — PR OPEN
+### Phase 5 — upstream — PR #435 opened, temporarily closed
 
 **[majorcontext/moat#435](https://github.com/majorcontext/moat/pull/435)** —
 `feat: support podman via its Docker-compatible socket` (8 commits from
@@ -133,7 +133,9 @@ confirmed findings; all fixed in three review-response commits:
   podman run stopped correctly from a fresh process with a live real-Docker
   daemon standing by as the trap.
 
-Next: watch PR review (upstream's claude-review bot reviews every push).
+Status: operator closed #435 pending their own review of the fork
+(2026-07-06); reopen with `gh pr reopen 435` (same number, CHANGELOG link
+stays valid). Upstream's claude-review bot reviews every push once reopened.
 If upstream declines or goes quiet, this fork becomes Lindalë's pinned source
 with the delta clearly isolated (every commit is droppable).
 
