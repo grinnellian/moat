@@ -33,30 +33,49 @@ Verified so far (2026-07-06, macOS arm64, podman 6.0.0, applehv/vfkit VM):
 - ✅ Full `moat run --runtime docker -- <cmd>` **works unmodified**: pulled
   ubuntu:22.04 through the VM, created/started/streamed/exited 0; container
   env shows `container=podman`. (No grants involved — plain command path.)
-- `--grant github` hard-floor run: **in progress** (exercises proxy,
-  host-gateway, CA trust, image build; result recorded here and on
-  ai-lindale#95). Caveat: the moat-stored github token may share the fate of
-  the invalidated gh CLI token — a 401 there would implicate the token, not
-  podman.
+- `--grant github` hard-floor run: **blocked on operator** — moat's stored
+  github grant fails with "encryption key changed", and re-granting requires a
+  valid token (moat validates at grant time; a fake PAT is rejected with 401).
+  Same root cause as the invalid gh CLI token. Once `gh auth login` +
+  `moat grant github` are re-run, execute Phase 4 below.
+- Engine discriminator verified: podman's compat `/version` lists a Component
+  named `Podman Engine` — that's the detection hook for doctor/helpers.
+- gVisor false positive verified: podman's compat `/info` `Runtimes` lists
+  `runsc` (plus kata, krun, youki, …) straight from containers.conf even
+  though none are installed. `moat doctor` already misreports
+  "gVisor: ✓ available" against podman on this machine.
 
 Known risk areas being exercised: derived-image build path (`moat/run:<hash>`),
 `--add-host … host-gateway` sentinel (podman ≥4.1 supports it), TLS-intercepting
 proxy reachability from the VM, rootless UID mapping vs. moat's root-user
 base-image contract.
 
-### Phase 2 — design (architect)
+### Phase 2 — design (architect) — DECIDED
 
-Shape depends on Phase 1:
+Phase 1 verdict: emulation works, so podman support = detection + doctor +
+docs + a thin `--runtime podman` alias. Decisions:
 
-- **If emulation works:** podman support ≈ detection + doctor + docs.
-  Insertion point already exists: `alternativeDockerSockets()` in
-  `internal/container/detect.go` probes third-party Docker-compatible sockets
-  (Rancher Desktop precedent). Add podman machine's socket path(s); add a
-  doctor line; decide whether `--runtime podman` becomes an alias that
-  resolves to the docker runtime over the podman socket.
-- **If it fails:** the verbatim failures define the delta a real `podman`
-  runtime needs (likely bind-mount semantics from the VM, build API gaps,
-  or host-gateway behavior).
+1. **No new `RuntimeType`.** `--runtime podman` / `MOAT_RUNTIME=podman`
+   resolves to the existing `DockerRuntime` pointed at a podman socket;
+   `Type()` stays `docker` so every existing switch remains valid.
+2. **Auto-detection** via the existing `alternativeDockerSockets()` precedent
+   (Rancher Desktop) in `internal/container/detect.go`: append podman machine
+   API sockets on macOS (`$TMPDIR/podman/*-api.sock`) and, on Linux,
+   `$XDG_RUNTIME_DIR/podman/podman.sock` (rootless) + `/run/podman/podman.sock`
+   (rootful).
+3. **Engine identification**: `/version` Components contains "Podman Engine";
+   cached helper on `DockerRuntime` (mirrors the gvisor sync.Once pattern).
+4. **Doctor**: show the engine behind the docker socket
+   ("docker (Podman Engine)") and annotate the gVisor line as
+   engine-reported/unverified when the engine is podman (see false positive
+   above). No behavior change to sandbox selection in v1 — documented instead.
+5. **Docs**: podman page in getting-started (machine setup incl. vfkit/krunkit
+   provider note, DOCKER_HOST, Linux podman.socket, rootless + root-user
+   base-image note, gVisor caveat); fix comparison table.
+
+Commit layout keeps each piece droppable by upstream: detection, doctor, flag
+alias, docs as separate conventional commits on `feat/podman` (cut from
+`upstream/main`, no PLAN.md).
 
 ### Phase 3 — implement (sonnet, per-step specs)
 
