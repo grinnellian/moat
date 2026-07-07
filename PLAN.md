@@ -193,3 +193,30 @@ design, identical across docker/apple/podman, not a podman regression.
 
 Branch now 12 commits, full `-race` suite green, live podman smoke passes.
 PR #435 still closed pending operator review; reopen when ready.
+
+## Post-review polish (2026-07-07)
+
+Operator caught that `moat list`/`status` showed `docker` for podman runs.
+Fixed (475a52c): they now read `docker (podman)`, derived from the recorded
+endpoint (no live engine call), matching `moat doctor`. Kept `Type()=="docker"`
+— podman IS the docker runtime over a podman socket; only the display label
+changed.
+
+While there, closed the last-flagged legacy residual (059cee6): `moat stop`
+now fails loud instead of silently marking a run stopped when a docker-type
+engine reports the container not-found AND the run has no recorded endpoint
+(the ambiguous wrong-engine case — the container may be alive on another
+engine). Reverts state, points at recovery; `moat destroy --force` gained the
+ability to tear down a still-running run so nothing wedges. Verified live:
+wrong-engine stop leaves the real container up and the run running;
+correct-engine retry and --force both recover. Runs with a recorded endpoint
+are pinned and unaffected; Apple swallows not-found so it's docker-only.
+
+Third security chfirm (deep, adversarial) returned GO: strict policy blocks at
+the packet level (a --noproxy bypass times out), the agent (uid 5000, zero
+effective caps) can't flush the firewall, forged proxy tokens are rejected.
+Out-of-scope pre-existing notes (identical across runtimes): UDP/53 open to any
+resolver, proxy port allowed to any dest IP.
+
+Branch 15 commits; full -race suite green. PR #435 still closed pending
+operator review.
