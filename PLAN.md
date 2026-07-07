@@ -220,3 +220,19 @@ resolver, proxy port allowed to any dest IP.
 
 Branch 15 commits; full -race suite green. PR #435 still closed pending
 operator review.
+
+## Follow-ups from the loud-fail chfirm (2026-07-07)
+
+A fresh verifier (not the author) GO'd the labeling + loud-fail live, and
+caught two small things, both fixed (2984b7c):
+
+- `moat status` header listed `docker` twice when a podman run was active —
+  a side effect of the ForEachAvailable fix visiting the host-pinned podman
+  runtime (Type() "docker"). Deduped the header by type; image enumeration
+  still visits every engine; per-run RUNTIME column still shows the engine.
+- The `docker (podman)` label matched a bare "podman" substring; tightened to
+  the socket basename (podman.sock / podman-machine-*-api.sock) so a docker
+  socket under a "podman"-named path isn't mislabeled.
+
+Branch 16 commits, full -race suite green. Every user-facing surface now
+reports the engine consistently. PR #435 still closed pending operator review.
