@@ -156,3 +156,40 @@ push/PR/fork limits that a fine-grained PAT hit; moat's credential store
   (`~/go/bin/moat` — don't clobber; build the fork to `./bin/`).
 - Docker Desktop's daemon hangs on all registry pulls on this machine; podman
   is the working pull path.
+
+## Adversarial hardening round (2026-07-07)
+
+After the PR opened, operator asked for a razor edge: adversarial review + chfirm
+(check-and-confirm; verifier never the author) before resubmission. Ran a fresh
+skeptical Fable full-branch review + a 6-lens attack workflow (concurrency,
+linux/CI, docs-truth, test-quality-via-mutation, hostile-maintainer, security),
+each finding independently chfirmed with executed evidence (27 agents). 20
+findings survived chfirm; fixed in 4 commits (cd3e982, 3476cc4, 2e28734,
+1455541):
+
+- **Headline bug (was live-reproducible):** endpoint pinning was one-directional
+  — a run created on the default Docker socket recorded docker_host="", so
+  `MOAT_RUNTIME=podman moat stop <run>` asked podman, got not-found, marked the
+  run stopped, and tore down proxy registration while the real Docker container
+  kept running. Fixed by recording the runtime's resolved DaemonHost() (never
+  empty) and collapsing the two reconnect-routing paths into one helper.
+- Pool mutex held across an uncached 5s ping (N wedged runs → N×5s serialized
+  startup hang); TLS env dropped on reconnect; clean/status blind to host-pinned
+  podman engines; podman auto-probe not verifying engine identity; Linux rootless
+  detection dying without XDG_RUNTIME_DIR; dead-endpoint errors now carry a
+  podman-aware recovery hint.
+- 4 docs-truth violations (auto-detection precedence on macOS, unscoped
+  podman-6 libkrun claim, fabricated verify block, README macOS version).
+- Test tripwires that didn't fire: the forced-docker hardening test skipped on
+  any host with live dockerd (incl. CI) — added a seam so it runs everywhere;
+  every fix's test mutation-verified (fails against the un-fixed code).
+
+**Three chfirm verifiers (fresh Fable, none were fix authors) → GO:**
+wrong-engine trap closed both directions (reproduced live); concurrency fixes
+mutation-proven; security floor holds under podman (placeholder-only env +
+working injection; strict network policy blocks non-allowlisted egress).
+Cleared as out-of-scope: cross-run proxy-token reuse is pre-existing bearer-token
+design, identical across docker/apple/podman, not a podman regression.
+
+Branch now 12 commits, full `-race` suite green, live podman smoke passes.
+PR #435 still closed pending operator review; reopen when ready.
