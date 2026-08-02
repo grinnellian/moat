@@ -1,5 +1,7 @@
 # Podman support — working plan
 
+> **Superseded (2026-08-02):** this plan is a historical record; the live conversation is upstream PR [#444](https://github.com/majorcontext/moat/pull/444) (from `feat/podman-rebase`) — PR #435 is dead (closed).
+
 Fork-meta document; lives on the fork's `main`, **not** part of the upstream PR
 (feature branches for upstream cut from `upstream/main` and don't include it).
 Mission context: [ai-lindale#95](https://github.com/grinnellian/ai-lindale/issues/95)
