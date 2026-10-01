@@ -2,7 +2,10 @@ package container
 
 import (
 	"context"
+	"errors"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -112,6 +115,57 @@ func TestBuildDockerFirewallScript_RejectsInvalidGrant(t *testing.T) {
 	bad.Port = 0
 	if _, err := buildDockerFirewallScript(3128, []netrules.TCPGrant{bad}); err == nil {
 		t.Fatal("expected error for port 0")
+	}
+}
+
+// runScriptWithFakeIptables runs the generated script under sh with a stub
+// iptables on PATH that fails whenever its arguments contain failOn (if
+// non-empty), and returns the script's exit code.
+func runScriptWithFakeIptables(t *testing.T, script, failOn string) int {
+	t.Helper()
+	dir := t.TempDir()
+	stub := "#!/bin/sh\n"
+	if failOn != "" {
+		stub += "case \"$*\" in *" + failOn + "*) echo \"stub: refusing $*\" >&2; exit 1;; esac\n"
+	}
+	stub += "exit 0\n"
+	if err := os.WriteFile(filepath.Join(dir, "iptables"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sh", "-c", script)
+	cmd.Env = []string{"PATH=" + dir + ":/usr/bin:/bin"}
+	err := cmd.Run()
+	if err == nil {
+		return 0
+	}
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		return ee.ExitCode()
+	}
+	t.Fatalf("running script: %v", err)
+	return -1
+}
+
+func TestBuildDockerFirewallScript_GrantFailureFailsTheScript(t *testing.T) {
+	script, err := buildDockerFirewallScript(3128, []netrules.TCPGrant{mustGrant(t, "10.1.2.3:22")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code := runScriptWithFakeIptables(t, script, ""); code != 0 {
+		t.Fatalf("script with a working iptables exited %d, want 0", code)
+	}
+	if code := runScriptWithFakeIptables(t, script, "-d 10.1.2.3"); code == 0 {
+		t.Fatal("script exited 0 although the grant's iptables command failed")
+	}
+}
+
+func TestBuildDockerFirewallScript_NoGrantsStillExitsZero(t *testing.T) {
+	script, err := buildDockerFirewallScript(3128, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code := runScriptWithFakeIptables(t, script, ""); code != 0 {
+		t.Fatalf("no-grants script exited %d, want 0", code)
 	}
 }
 

@@ -1,6 +1,7 @@
 package netrules
 
 import (
+	"net/netip"
 	"strings"
 	"testing"
 )
@@ -15,6 +16,11 @@ func TestParseTCPGrant_Valid(t *testing.T) {
 		{"192.0.2.10:8080", "192.0.2.10", 8080},
 		{"172.16.0.1:1", "172.16.0.1", 1},
 		{"198.51.100.7:65535", "198.51.100.7", 65535},
+		{"192.168.1.1:22", "192.168.1.1", 22},
+		{"172.31.255.1:22", "172.31.255.1", 22},
+		{"169.253.255.255:22", "169.253.255.255", 22},
+		{"223.255.255.255:22", "223.255.255.255", 22},
+		{"1.0.0.1:22", "1.0.0.1", 22},
 	}
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {
@@ -51,6 +57,17 @@ func TestParseTCPGrant_Invalid(t *testing.T) {
 		{"wildcard star", "*:22"},
 		{"wildcard port", "10.1.2.3:*"},
 		{"unspecified", "0.0.0.0:22"},
+		{"this-network 0/8", "0.1.2.3:22"},
+		{"this-network 0/8 top", "0.255.255.255:22"},
+		{"loopback", "127.0.0.1:22"},
+		{"loopback other", "127.1.2.3:22"},
+		{"link-local", "169.254.1.1:22"},
+		{"cloud metadata", "169.254.169.254:80"},
+		{"multicast low", "224.0.0.1:22"},
+		{"multicast high", "239.255.255.250:22"},
+		{"reserved 240/4", "240.0.0.1:22"},
+		{"reserved 240/4 top", "255.255.255.254:22"},
+		{"broadcast", "255.255.255.255:22"},
 		{"port zero", "10.1.2.3:0"},
 		{"port too high", "10.1.2.3:65536"},
 		{"port huge", "10.1.2.3:99999999999999999999"},
@@ -81,6 +98,15 @@ func TestParseTCPGrant_Invalid(t *testing.T) {
 				t.Fatalf("ParseTCPGrant(%q) = %v, want error", tt.in, g)
 			}
 		})
+	}
+}
+
+func TestTCPGrantValidate_RejectsNonUnicastHandBuilt(t *testing.T) {
+	for _, ip := range []string{"0.0.0.0", "0.9.9.9", "127.0.0.1", "169.254.169.254", "224.0.0.1", "240.0.0.1", "255.255.255.255"} {
+		g := TCPGrant{IP: netip.MustParseAddr(ip), Port: 22}
+		if err := g.Validate(); err == nil {
+			t.Errorf("Validate accepted non-unicast %s", ip)
+		}
 	}
 }
 

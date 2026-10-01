@@ -2895,3 +2895,16 @@ func TestLoadConfigRejectsBadPiPackage(t *testing.T) {
 		t.Fatal("expected Load to reject a local-path pi package")
 	}
 }
+
+func TestNetworkTCPGrantsRefuseNonUnicast(t *testing.T) {
+	for _, ip := range []string{"0.0.0.0", "0.1.2.3", "127.0.0.1", "169.254.1.1", "169.254.169.254", "224.0.0.1", "240.0.0.1", "255.255.255.255"} {
+		t.Run(ip, func(t *testing.T) {
+			dir := t.TempDir()
+			y := "agent: test\nnetwork:\n  policy: strict\n  tcp:\n    - \"" + ip + ":22\"\n"
+			os.WriteFile(filepath.Join(dir, "moat.yaml"), []byte(y), 0o644)
+			if _, err := Load(dir); err == nil || !strings.Contains(err.Error(), "network.tcp") {
+				t.Fatalf("expected network.tcp error for %s, got %v", ip, err)
+			}
+		})
+	}
+}
