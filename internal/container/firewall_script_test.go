@@ -118,32 +118,111 @@ func TestBuildDockerFirewallScript_RejectsInvalidGrant(t *testing.T) {
 	}
 }
 
-// runScriptWithFakeIptables runs the generated script under sh with a stub
-// iptables on PATH that fails whenever its arguments contain failOn (if
-// non-empty), and returns the script's exit code.
-func runScriptWithFakeIptables(t *testing.T, script, failOn string) int {
+// fakeFirewallRun is the outcome of running a firewall script against stubs.
+type fakeFirewallRun struct {
+	code   int
+	v4Log  string // every iptables invocation, one per line, in order
+	v6Log  string // every ip6tables-legacy invocation, one per line, in order
+	stderr string
+}
+
+// runScriptWithFakeFirewall runs the generated script under sh with stub
+// iptables and ip6tables-legacy binaries on PATH. Both log their arguments;
+// iptables fails (exit 1) whenever its arguments contain failOn (if non-empty).
+func runScriptWithFakeFirewall(t *testing.T, script, failOn string) fakeFirewallRun {
 	t.Helper()
 	dir := t.TempDir()
-	stub := "#!/bin/sh\n"
-	if failOn != "" {
-		stub += "case \"$*\" in *" + failOn + "*) echo \"stub: refusing $*\" >&2; exit 1;; esac\n"
+	mk := func(name, failPattern string) {
+		stub := "#!/bin/sh\necho \"$*\" >> \"$LOGDIR/" + name + ".log\"\n"
+		if failPattern != "" {
+			stub += "case \"$*\" in *" + failPattern + "*) echo \"stub: refusing $*\" >&2; exit 1;; esac\n"
+		}
+		stub += "exit 0\n"
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(stub), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
-	stub += "exit 0\n"
-	if err := os.WriteFile(filepath.Join(dir, "iptables"), []byte(stub), 0o755); err != nil {
+	mk("iptables", failOn)
+	mk("ip6tables-legacy", "")
+
+	var stderr strings.Builder
+	cmd := exec.Command("sh", "-c", script)
+	cmd.Env = []string{"PATH=" + dir + ":/usr/bin:/bin", "LOGDIR=" + dir}
+	cmd.Stderr = &stderr
+	res := fakeFirewallRun{}
+	if err := cmd.Run(); err != nil {
+		var ee *exec.ExitError
+		if !errors.As(err, &ee) {
+			t.Fatalf("running script: %v", err)
+		}
+		res.code = ee.ExitCode()
+	}
+	read := func(name string) string {
+		b, _ := os.ReadFile(filepath.Join(dir, name+".log"))
+		return string(b)
+	}
+	res.v4Log, res.v6Log, res.stderr = read("iptables"), read("ip6tables-legacy"), stderr.String()
+	return res
+}
+
+// runScriptWithFakeIptables returns only the exit code of the script run.
+func runScriptWithFakeIptables(t *testing.T, script, failOn string) int {
+	t.Helper()
+	return runScriptWithFakeFirewall(t, script, failOn).code
+}
+
+// A grant that fails to install must fail the script AND leave the container
+// firewalled (fail closed): the final IPv4 DROP and the IPv6 lockdown are still
+// installed, so egress is not left open if the caller then fails to stop the
+// container.
+func TestBuildDockerFirewallScript_GrantFailureFailsClosed(t *testing.T) {
+	script, err := buildDockerFirewallScript(3128, []netrules.TCPGrant{mustGrant(t, "10.1.2.3:22"), mustGrant(t, "10.1.2.3:8080")})
+	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command("sh", "-c", script)
-	cmd.Env = []string{"PATH=" + dir + ":/usr/bin:/bin"}
-	err := cmd.Run()
-	if err == nil {
-		return 0
+	res := runScriptWithFakeFirewall(t, script, "-d 10.1.2.3 --dport 22 ")
+	if res.code == 0 {
+		t.Fatal("script exited 0 although a grant failed")
 	}
-	var ee *exec.ExitError
-	if errors.As(err, &ee) {
-		return ee.ExitCode()
+
+	lines := strings.Split(strings.TrimSpace(res.v4Log), "\n")
+	failedAt, dropAt := -1, -1
+	for i, l := range lines {
+		if strings.Contains(l, "-d 10.1.2.3 --dport 22 ") {
+			failedAt = i
+		}
+		if strings.Contains(l, "-A OUTPUT -j DROP") {
+			dropAt = i
+		}
 	}
-	t.Fatalf("running script: %v", err)
-	return -1
+	if failedAt < 0 || dropAt < 0 || dropAt < failedAt {
+		t.Errorf("IPv4 DROP not installed after the failed grant (failed=%d drop=%d); iptables log:\n%s", failedAt, dropAt, res.v4Log)
+	}
+	// The later grant never installs after a failure.
+	if strings.Contains(res.v4Log, "--dport 8080 -j ACCEPT") {
+		t.Errorf("a later grant was installed after the failure:\n%s", res.v4Log)
+	}
+	if !strings.Contains(res.v6Log, "-A OUTPUT -j DROP") {
+		t.Errorf("IPv6 lockdown missing after the failed grant; ip6tables log:\n%q", res.v6Log)
+	}
+	if !strings.Contains(res.stderr, "network.tcp") {
+		t.Errorf("stderr should name the failed grant, got %q", res.stderr)
+	}
+}
+
+// On success exactly one IPv4 DROP is installed (the failure path adds none).
+func TestBuildDockerFirewallScript_GrantSuccessInstallsSingleDrop(t *testing.T) {
+	script, err := buildDockerFirewallScript(3128, []netrules.TCPGrant{mustGrant(t, "10.1.2.3:22")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := runScriptWithFakeFirewall(t, script, "")
+	if res.code != 0 {
+		t.Fatalf("exit %d", res.code)
+	}
+	if n := strings.Count(res.v4Log, "-A OUTPUT -j DROP"); n != 1 {
+		t.Errorf("want exactly one IPv4 DROP, got %d:\n%s", n, res.v4Log)
+	}
 }
 
 func TestBuildDockerFirewallScript_GrantFailureFailsTheScript(t *testing.T) {
