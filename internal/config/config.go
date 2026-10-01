@@ -670,6 +670,18 @@ func Load(dir string) (*Config, error) {
 		seen[port] = true
 	}
 
+	// Validate network.tcp raw-TCP egress grants. They only mean something
+	// under a strict firewall (permissive allows everything already), so a
+	// permissive policy with grants is a configuration mistake, not a no-op.
+	if len(cfg.Network.TCP) > 0 {
+		if cfg.Network.Policy != "strict" {
+			return nil, fmt.Errorf("network.tcp requires network.policy: strict (it grants raw-TCP egress through the strict firewall; it has no meaning under %q)", cfg.Network.Policy)
+		}
+		if _, err := netrules.ParseTCPGrants(cfg.Network.TCP); err != nil {
+			return nil, err
+		}
+	}
+
 	// Validate sandbox setting
 	if cfg.Sandbox != "" && cfg.Sandbox != "none" {
 		return nil, fmt.Errorf("invalid sandbox value %q: must be empty (default) or 'none'", cfg.Sandbox)

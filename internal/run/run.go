@@ -89,9 +89,9 @@ type Run struct {
 
 	// Firewall settings (set when network.policy is strict)
 	FirewallEnabled bool
-	ProxyHost       string // Host address for proxy (for firewall rules)
-	ProxyPort       int    // Port number for proxy (for firewall rules)
-	ProxyAuthToken  string // Auth token for proxy daemon (set when run is registered with daemon)
+	ProxyHost       string              // Host address for proxy (for firewall rules)
+	ProxyPort       int                 // Port number for proxy (for firewall rules)
+	ProxyAuthToken  string              // Auth token for proxy daemon (set when run is registered with daemon)
 	TCPGrants       []netrules.TCPGrant // network.tcp raw-TCP egress grants applied by the firewall
 
 	// ProxyRegReq is the registration request saved for re-registration

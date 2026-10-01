@@ -2,6 +2,7 @@ package container
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/majorcontext/moat/internal/netrules"
 )
@@ -15,6 +16,20 @@ import (
 // IP, one port) between the proxy-port rule and the final DROP. The IPv6 chain
 // is never touched by grants: grants are IPv4 literals only.
 func buildDockerFirewallScript(proxyPort int, tcpGrants []netrules.TCPGrant) (string, error) {
+	// The grant block begins with its own leading newlines and has no trailing
+	// newline, so an empty block leaves the surrounding script untouched.
+	var grantBlock strings.Builder
+	for i, g := range tcpGrants {
+		// Never render an unvalidated grant into a root shell script.
+		if err := g.Validate(); err != nil {
+			return "", fmt.Errorf("invalid network.tcp grant %d: %w", i, err)
+		}
+		if i == 0 {
+			grantBlock.WriteString("\n\n\t\t# Explicit raw-TCP egress grants (network.tcp): exactly this IPv4 address and port")
+		}
+		fmt.Fprintf(&grantBlock, "\n\t\tiptables -w -A OUTPUT -p tcp -d %s --dport %d -j ACCEPT", g.IP, g.Port)
+	}
+
 	script := fmt.Sprintf(`
 		# Verify iptables is available
 		if ! command -v iptables >/dev/null 2>&1; then
@@ -35,7 +50,7 @@ func buildDockerFirewallScript(proxyPort int, tcpGrants []netrules.TCPGrant) (st
 		iptables -w -A OUTPUT -p udp --dport 53 -j ACCEPT
 
 		# Allow traffic to proxy port (destination IP not filtered - see function comment)
-		iptables -w -A OUTPUT -p tcp --dport %d -j ACCEPT
+		iptables -w -A OUTPUT -p tcp --dport %d -j ACCEPT%s
 
 		# Drop all other outbound traffic
 		iptables -w -A OUTPUT -j DROP
@@ -72,6 +87,6 @@ func buildDockerFirewallScript(proxyPort int, tcpGrants []netrules.TCPGrant) (st
 				echo "WARN: ip6tables rules failed — IPv6 traffic will not be firewalled" >&2
 			fi
 		fi
-	`, proxyPort, proxyPort)
+	`, proxyPort, grantBlock.String(), proxyPort)
 	return script, nil
 }

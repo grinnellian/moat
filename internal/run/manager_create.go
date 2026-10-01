@@ -37,6 +37,7 @@ import (
 	"github.com/majorcontext/moat/internal/langserver"
 	"github.com/majorcontext/moat/internal/log"
 	"github.com/majorcontext/moat/internal/name"
+	"github.com/majorcontext/moat/internal/netrules"
 	"github.com/majorcontext/moat/internal/provider"
 	awsprov "github.com/majorcontext/moat/internal/providers/aws"
 	"github.com/majorcontext/moat/internal/providers/claude" // only for settings types (LoadAllSettings, Settings, MarketplaceConfig) - provider setup uses provider interfaces
@@ -103,6 +104,22 @@ func (m *Manager) Create(ctx context.Context, opts Options) (resRun *Run, retErr
 	if opts.Config != nil {
 		isApple := m.defaultRuntime().Type() == container.RuntimeApple
 		if err := config.CheckVolumeRuntimeSupport(opts.Config.Volumes, isApple); err != nil {
+			return nil, err
+		}
+	}
+
+	// network.tcp raw-TCP egress grants (strict policy only, enforced at config
+	// load). Re-parsed here so the firewall only ever sees validated grants, and
+	// refused on runtimes that cannot enforce them — again before any resources
+	// are staged, so these returns need no cleanup.
+	var tcpGrants []netrules.TCPGrant
+	if opts.Config != nil && len(opts.Config.Network.TCP) > 0 {
+		var err error
+		tcpGrants, err = netrules.ParseTCPGrants(opts.Config.Network.TCP)
+		if err != nil {
+			return nil, err
+		}
+		if err := checkTCPGrantsSupported(m.defaultRuntime().Type(), tcpGrants); err != nil {
 			return nil, err
 		}
 	}
@@ -180,6 +197,7 @@ func (m *Manager) Create(ctx context.Context, opts Options) (resRun *Run, retErr
 		Interactive:   opts.Interactive,
 		CreatedAt:     time.Now(),
 		exitCh:        make(chan struct{}),
+		TCPGrants:     tcpGrants,
 	}
 
 	// Create the run directory before any network/container operations so that
@@ -704,6 +722,8 @@ func (m *Manager) Create(ctx context.Context, opts Options) (resRun *Run, retErr
 		// must NOT be in NO_PROXY (otherwise it bypasses network.host enforcement).
 		isHostNet := m.defaultRuntime().SupportsHostNetwork() && (opts.Config == nil || len(opts.Config.Ports) == 0)
 		proxyEnv = buildProxyEnv(regResp.AuthToken, regResp.ProxyPort, isHostNet)
+		// Granted IPs bypass the proxy (they are raw TCP); only when network.tcp is set.
+		proxyEnv = appendNoProxyGrants(proxyEnv, tcpGrants)
 		proxyHost := syntheticProxyHost + ":" + strconv.Itoa(regResp.ProxyPort)
 
 		// Docker-on-Linux resolves the synthetic hostnames via --add-host (set

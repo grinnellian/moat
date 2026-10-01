@@ -190,6 +190,26 @@ This means:
 
 The iptables firewall ensures that code cannot bypass the proxy by making direct socket connections.
 
+### Explicit raw-TCP grants
+
+When an agent needs a plain TCP service on one specific machine — SSH to a build host, or an HTTP service on a private port — grant exactly that address and port with `network.tcp`:
+
+```yaml
+network:
+  policy: strict
+  tcp:
+    - "10.1.2.3:22"
+    - "10.1.2.3:8080"
+```
+
+Each entry is an `<IPv4-literal>:<port>` string and adds one firewall rule that allows outbound TCP to exactly that IP and port, bypassing the proxy. Everything else stays blocked; the grant does not widen to other ports on the same IP, other IPs, UDP, or IPv6.
+
+- **Strict only.** `network.tcp` with a `permissive` (or default) policy is a configuration error.
+- **Literals only.** Hostnames, CIDRs, ranges, wildcards, `0.0.0.0`, IPv6, a missing or out-of-range port (1-65535), and duplicate entries are refused when `moat.yaml` loads.
+- **Not inspected.** Granted traffic does not pass through the proxy, so it is not subject to `network.rules` or credential injection, and it is not logged by the proxy. Grant only what you would trust the agent to reach unobserved.
+- **Proxy variables.** The granted IPs are appended to `NO_PROXY` / `no_proxy` inside the container so tools that honour the proxy variables connect directly. Existing entries are kept.
+- **Docker and Podman only.** The Apple container runtime refuses `network.tcp` with an error.
+
 ## Proxy bypass
 
 Some traffic bypasses the proxy:

@@ -937,6 +937,8 @@ func versionIsPodman(version types.Version) bool {
 // for Apple containers, this provides sufficient protection.
 // If ip6tables is not available (minimal images), a warning is emitted to stderr
 // but the setup does not fail — the container may not have IPv6 connectivity.
+// Each tcpGrants entry (network.tcp) adds one IPv4 ACCEPT rule for exactly that
+// destination IP and port; see buildDockerFirewallScript.
 func (r *DockerRuntime) SetupFirewall(ctx context.Context, containerID string, proxyHost string, proxyPort int, tcpGrants []netrules.TCPGrant) error {
 	// Validate port range
 	if proxyPort < 1 || proxyPort > 65535 {
