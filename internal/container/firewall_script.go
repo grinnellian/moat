@@ -26,10 +26,13 @@ func buildDockerFirewallScript(proxyPort int, tcpGrants []netrules.TCPGrant) (st
 		}
 		if i == 0 {
 			grantBlock.WriteString("\n\n\t\t# Explicit raw-TCP egress grants (network.tcp): exactly this IPv4 address and port")
+			grantBlock.WriteString(failClosedFunc(proxyPort))
 		}
-		// A grant that fails to install must fail the script: the operator asked
-		// for access the container would otherwise silently lack.
-		fmt.Fprintf(&grantBlock, "\n\t\tiptables -w -A OUTPUT -p tcp -d %s --dport %d -j ACCEPT || { echo \"ERROR: failed to install network.tcp grant %s:%d\" >&2; exit 1; }", g.IP, g.Port, g.IP, g.Port)
+		// A grant that fails to install must fail the script, and must fail
+		// CLOSED: the operator asked for access the container would otherwise
+		// silently lack, and bailing out before the final DROP would leave
+		// egress open if the caller then fails to stop the container.
+		fmt.Fprintf(&grantBlock, "\n\t\tiptables -w -A OUTPUT -p tcp -d %s --dport %d -j ACCEPT || moat_fail_closed %s:%d", g.IP, g.Port, g.IP, g.Port)
 	}
 
 	script := fmt.Sprintf(`
@@ -91,4 +94,34 @@ func buildDockerFirewallScript(proxyPort int, tcpGrants []netrules.TCPGrant) (st
 		fi
 	`, proxyPort, grantBlock.String(), proxyPort)
 	return script, nil
+}
+
+// failClosedFunc returns a shell function, defined only when grants exist, that
+// the grant rules call on failure. It reports the failed grant, installs the
+// final IPv4 DROP and the same IPv6 lockdown the normal path installs (all
+// best-effort: the command that just failed may fail again), then exits
+// non-zero. It begins with a newline and has no trailing newline.
+func failClosedFunc(proxyPort int) string {
+	return strings.TrimSuffix(fmt.Sprintf(`
+		moat_fail_closed() {
+			echo "ERROR: failed to install network.tcp grant $1 - locking egress down" >&2
+			iptables -w -A OUTPUT -j DROP || true
+			if command -v ip6tables-legacy >/dev/null 2>&1; then
+				F6=ip6tables-legacy
+			elif command -v ip6tables >/dev/null 2>&1; then
+				F6=ip6tables
+			else
+				F6=""
+			fi
+			if [ -n "$F6" ]; then
+				$F6 -w 5 -F OUTPUT 2>/dev/null || true
+				$F6 -w 5 -A OUTPUT -o lo -j ACCEPT || true
+				$F6 -w 5 -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT || true
+				$F6 -w 5 -A OUTPUT -p udp --dport 53 -j ACCEPT || true
+				$F6 -w 5 -A OUTPUT -p tcp --dport %d -j ACCEPT || true
+				$F6 -w 5 -A OUTPUT -j DROP || true
+			fi
+			exit 1
+		}
+`, proxyPort), "\n")
 }

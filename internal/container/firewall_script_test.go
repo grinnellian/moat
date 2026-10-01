@@ -51,6 +51,10 @@ func TestBuildDockerFirewallScript_GrantRule(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// The fail-closed helper (only invoked on a grant failure) contains its own
+	// DROP; strip it so the placement checks look at the main rule sequence.
+	got = stripFailClosedFunc(t, got)
+
 	const wantRule = "iptables -w -A OUTPUT -p tcp -d 10.1.2.3 --dport 22 -j ACCEPT"
 	if n := strings.Count(got, wantRule); n != 1 {
 		t.Fatalf("want exactly one %q, found %d in:\n%s", wantRule, n, got)
@@ -65,7 +69,8 @@ func TestBuildDockerFirewallScript_GrantRule(t *testing.T) {
 	}
 
 	// No other new ACCEPT and nothing new on the IPv6 chain: every added line
-	// is part of the single grant rule (and its comment).
+	// is part of the single grant rule, its comment, or the fail-closed helper
+	// (which only runs when a grant fails to install).
 	golden := goldenNoGrants(t)
 	for _, line := range strings.Split(got, "\n") {
 		if strings.Contains(golden, line) {
@@ -86,6 +91,21 @@ func TestBuildDockerFirewallScript_GrantRule(t *testing.T) {
 	if ip6(got) != ip6(golden) {
 		t.Errorf("IPv6 section changed")
 	}
+}
+
+// stripFailClosedFunc removes the moat_fail_closed shell function definition,
+// which is only ever invoked when a grant fails to install.
+func stripFailClosedFunc(t *testing.T, script string) string {
+	t.Helper()
+	start := strings.Index(script, "\n\t\tmoat_fail_closed() {")
+	if start < 0 {
+		t.Fatal("moat_fail_closed definition not found")
+	}
+	end := strings.Index(script[start:], "\n\t\t}")
+	if end < 0 {
+		t.Fatal("moat_fail_closed definition not terminated")
+	}
+	return script[:start] + script[start+end+len("\n\t\t}"):]
 }
 
 func TestBuildDockerFirewallScript_MultipleGrantsKeepOrder(t *testing.T) {
