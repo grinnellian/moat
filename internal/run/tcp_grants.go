@@ -9,7 +9,7 @@ import (
 )
 
 // appendNoProxyGrants returns a copy of env with the granted IPs appended to
-// the NO_PROXY and no_proxy entries, so tools that honour the proxy variables
+// the NO_PROXY and no_proxy entries, so tools that honor the proxy variables
 // connect to a granted IP:port directly instead of through the proxy (where
 // the raw TCP the grant exists for, such as SSH, could not flow anyway).
 // Existing entries are never dropped, IPs are deduplicated, and with no grants

@@ -18,7 +18,8 @@ type TCPGrant struct {
 }
 
 // ParseTCPGrant parses an "<IPv4-literal>:<port>" string. It refuses
-// hostnames, CIDRs, ranges, wildcards, 0.0.0.0, IPv6, a missing or
+// hostnames, CIDRs, ranges, wildcards, non-unicast addresses (0.0.0.0/8,
+// loopback, link-local, multicast, 240.0.0.0/4), IPv6, a missing or
 // out-of-range port (1-65535), and anything with surrounding whitespace.
 func ParseTCPGrant(s string) (TCPGrant, error) {
 	// Exactly one colon: refuses bare and bracketed IPv6 outright.
@@ -59,13 +60,31 @@ func (g TCPGrant) Validate() error {
 	if !g.IP.IsValid() || !g.IP.Is4() {
 		return fmt.Errorf("address must be an IPv4 literal")
 	}
-	if g.IP.IsUnspecified() {
-		return fmt.Errorf("address 0.0.0.0 is not allowed")
+	if !isOrdinaryUnicast(g.IP) {
+		return fmt.Errorf("address %s is not an ordinary unicast host (0.0.0.0/8, loopback, link-local, multicast and 240.0.0.0/4 reserved/broadcast addresses are not allowed)", g.IP)
 	}
 	if g.Port < 1 || g.Port > 65535 {
 		return fmt.Errorf("port %d is out of range (1-65535)", g.Port)
 	}
 	return nil
+}
+
+// Ranges a grant may never name: "this network" (0.0.0.0/8, includes 0.0.0.0)
+// and the reserved block 240.0.0.0/4 (includes 255.255.255.255 broadcast).
+var (
+	thisNetwork = netip.MustParsePrefix("0.0.0.0/8")
+	reserved    = netip.MustParsePrefix("240.0.0.0/4")
+)
+
+// isOrdinaryUnicast reports whether ip is a plain unicast host address: not
+// 0.0.0.0/8, loopback (127/8), link-local (169.254/16, which holds the cloud
+// metadata address), multicast (224/4), or the reserved 240/4 block.
+func isOrdinaryUnicast(ip netip.Addr) bool {
+	return !thisNetwork.Contains(ip) &&
+		!ip.IsLoopback() &&
+		!ip.IsLinkLocalUnicast() &&
+		!ip.IsMulticast() &&
+		!reserved.Contains(ip)
 }
 
 // String renders g as "<ip>:<port>".

@@ -12,10 +12,10 @@ import (
 )
 
 // tcpGrants builds grants directly (not via the parser) so these tests do not
-// depend on parser behaviour.
+// depend on parser behavior.
 func tcpGrants(t *testing.T, ss ...string) []netrules.TCPGrant {
 	t.Helper()
-	var gs []netrules.TCPGrant
+	gs := make([]netrules.TCPGrant, 0, len(ss))
 	for _, s := range ss {
 		ap := netip.MustParseAddrPort(s)
 		gs = append(gs, netrules.TCPGrant{IP: ap.Addr(), Port: int(ap.Port())})

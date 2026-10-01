@@ -27,7 +27,9 @@ func buildDockerFirewallScript(proxyPort int, tcpGrants []netrules.TCPGrant) (st
 		if i == 0 {
 			grantBlock.WriteString("\n\n\t\t# Explicit raw-TCP egress grants (network.tcp): exactly this IPv4 address and port")
 		}
-		fmt.Fprintf(&grantBlock, "\n\t\tiptables -w -A OUTPUT -p tcp -d %s --dport %d -j ACCEPT", g.IP, g.Port)
+		// A grant that fails to install must fail the script: the operator asked
+		// for access the container would otherwise silently lack.
+		fmt.Fprintf(&grantBlock, "\n\t\tiptables -w -A OUTPUT -p tcp -d %s --dport %d -j ACCEPT || { echo \"ERROR: failed to install network.tcp grant %s:%d\" >&2; exit 1; }", g.IP, g.Port, g.IP, g.Port)
 	}
 
 	script := fmt.Sprintf(`
