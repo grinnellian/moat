@@ -17,6 +17,7 @@ import (
 	"github.com/majorcontext/moat/internal/daemon"
 	"github.com/majorcontext/moat/internal/id"
 	"github.com/majorcontext/moat/internal/mcpcatalog"
+	"github.com/majorcontext/moat/internal/netrules"
 	"github.com/majorcontext/moat/internal/provider"
 	awsprov "github.com/majorcontext/moat/internal/providers/aws"
 	"github.com/majorcontext/moat/internal/snapshot"
@@ -88,9 +89,10 @@ type Run struct {
 
 	// Firewall settings (set when network.policy is strict)
 	FirewallEnabled bool
-	ProxyHost       string // Host address for proxy (for firewall rules)
-	ProxyPort       int    // Port number for proxy (for firewall rules)
-	ProxyAuthToken  string // Auth token for proxy daemon (set when run is registered with daemon)
+	ProxyHost       string              // Host address for proxy (for firewall rules)
+	ProxyPort       int                 // Port number for proxy (for firewall rules)
+	ProxyAuthToken  string              // Auth token for proxy daemon (set when run is registered with daemon)
+	TCPGrants       []netrules.TCPGrant // network.tcp raw-TCP egress grants applied by the firewall
 
 	// ProxyRegReq is the registration request saved for re-registration
 	// after a proxy daemon restart. The health monitor uses it to restore

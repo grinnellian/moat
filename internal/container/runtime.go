@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"time"
+
+	"github.com/majorcontext/moat/internal/netrules"
 )
 
 // DefaultDNS returns the default DNS servers if the provided list is empty.
@@ -128,7 +130,9 @@ type Runtime interface {
 	// proxyHost is the address the container uses to reach the proxy (e.g., "host.docker.internal").
 	// proxyPort is the proxy's port number.
 	// This blocks all other outbound IPv4 and IPv6 traffic, forcing everything through the proxy.
-	SetupFirewall(ctx context.Context, id string, proxyHost string, proxyPort int) error
+	// tcpGrants are explicit raw-TCP egress grants (network.tcp); each permits
+	// outbound TCP to exactly one IPv4 address and port, bypassing the proxy.
+	SetupFirewall(ctx context.Context, id string, proxyHost string, proxyPort int, tcpGrants []netrules.TCPGrant) error
 
 	// ListImages returns all moat-managed images.
 	ListImages(ctx context.Context) ([]ImageInfo, error)

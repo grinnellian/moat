@@ -22,6 +22,7 @@ import (
 	"github.com/creack/pty"
 	"github.com/majorcontext/moat/internal/container/output"
 	"github.com/majorcontext/moat/internal/log"
+	"github.com/majorcontext/moat/internal/netrules"
 	"github.com/majorcontext/moat/internal/term"
 	"github.com/majorcontext/moat/internal/ui"
 )
@@ -572,7 +573,15 @@ func (r *AppleRuntime) Close() error {
 // filtering and prevents unauthorized access even if another service runs on the same port.
 // If ip6tables is not available (minimal images), a warning is emitted to stderr
 // but the setup does not fail — the container may not have IPv6 connectivity.
-func (r *AppleRuntime) SetupFirewall(ctx context.Context, containerID string, proxyHost string, proxyPort int) error {
+// tcpGrants (network.tcp) are not supported here: a non-empty list is an error.
+func (r *AppleRuntime) SetupFirewall(ctx context.Context, containerID string, proxyHost string, proxyPort int, tcpGrants []netrules.TCPGrant) error {
+	// network.tcp is Docker-only: the grant rules are not implemented (or
+	// live-tested) for Apple containers, so refuse rather than silently run
+	// without the grant the operator asked for.
+	if len(tcpGrants) > 0 {
+		return fmt.Errorf("network.tcp raw-TCP egress grants are not supported on the Apple container runtime (Docker/Podman only)")
+	}
+
 	// Validate port range
 	if proxyPort < 1 || proxyPort > 65535 {
 		return fmt.Errorf("invalid proxy port %d: must be between 1 and 65535", proxyPort)

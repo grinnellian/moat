@@ -859,6 +859,22 @@ Inside the container:
 OLLAMA_HOST=http://$MOAT_HOST_GATEWAY:11434 ollama run llama3
 ```
 
+### network.tcp
+
+Explicit raw-TCP egress grants under `network.policy: strict`.
+
+```yaml
+network:
+  policy: strict
+  tcp:
+    - "10.1.2.3:22"
+```
+
+- Type: `array[string]`, each `"<IPv4-literal>:<port>"`
+- Default: `[]`
+
+Each entry lets the container open outbound TCP to exactly that IP and port, bypassing the proxy. Requires `network.policy: strict`; hostnames, CIDRs, ranges, wildcards, non-unicast addresses (`0.0.0.0/8`, loopback, link-local, multicast, `240.0.0.0/4`), IPv6, bad ports, and duplicates are errors. Docker and Podman only. See [Explicit raw-TCP grants](../concepts/05-networking.md#explicit-raw-tcp-grants).
+
 ---
 
 ## Execution

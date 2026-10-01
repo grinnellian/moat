@@ -21,6 +21,7 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/majorcontext/moat/internal/container"
 	"github.com/majorcontext/moat/internal/deps"
+	"github.com/majorcontext/moat/internal/netrules"
 	"github.com/majorcontext/moat/internal/routing"
 	"github.com/majorcontext/moat/internal/storage"
 )
@@ -132,7 +133,7 @@ func (f *flexibleRuntime) SidecarManager() container.SidecarManager { return nil
 func (f *flexibleRuntime) BuildManager() container.BuildManager     { return nil }
 func (f *flexibleRuntime) ServiceManager() container.ServiceManager { return nil }
 func (f *flexibleRuntime) Close() error                             { return nil }
-func (f *flexibleRuntime) SetupFirewall(ctx context.Context, id, host string, port int) error {
+func (f *flexibleRuntime) SetupFirewall(ctx context.Context, id, host string, port int, tcpGrants []netrules.TCPGrant) error {
 	if f.setupFirewallFn != nil {
 		return f.setupFirewallFn(ctx, id, host, port)
 	}

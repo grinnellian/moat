@@ -269,6 +269,7 @@ type NetworkConfig struct {
 	Rules      []netrules.NetworkRuleEntry `yaml:"rules,omitempty"`
 	KeepPolicy *keep.PolicyConfig          `yaml:"keep_policy,omitempty"`
 	Host       []int                       `yaml:"host,omitempty"` // TCP ports on the host the container may access
+	TCP        []string                    `yaml:"tcp,omitempty"`  // "<IPv4>:<port>" raw-TCP egress grants (strict policy only)
 }
 
 // LLMGatewayConfig configures Keep LLM policy evaluation in the proxy.
@@ -667,6 +668,18 @@ func Load(dir string) (*Config, error) {
 			return nil, fmt.Errorf("network.host: duplicate port %d", port)
 		}
 		seen[port] = true
+	}
+
+	// Validate network.tcp raw-TCP egress grants. They only mean something
+	// under a strict firewall (permissive allows everything already), so a
+	// permissive policy with grants is a configuration mistake, not a no-op.
+	if len(cfg.Network.TCP) > 0 {
+		if cfg.Network.Policy != "strict" {
+			return nil, fmt.Errorf("network.tcp requires network.policy: strict (it grants raw-TCP egress through the strict firewall; it has no meaning under %q)", cfg.Network.Policy)
+		}
+		if _, err := netrules.ParseTCPGrants(cfg.Network.TCP); err != nil {
+			return nil, err
+		}
 	}
 
 	// Validate sandbox setting

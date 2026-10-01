@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -2686,6 +2687,118 @@ func TestNetworkHostConfig(t *testing.T) {
 	}
 }
 
+func TestNetworkTCPGrants(t *testing.T) {
+	tests := []struct {
+		name    string
+		yaml    string
+		want    []string
+		wantErr string
+	}{
+		{
+			name: "valid under strict",
+			yaml: "agent: test\nnetwork:\n  policy: strict\n  tcp:\n    - \"10.1.2.3:22\"\n    - \"10.1.2.3:8080\"\n",
+			want: []string{"10.1.2.3:22", "10.1.2.3:8080"},
+		},
+		{
+			name: "absent is fine under strict",
+			yaml: "agent: test\nnetwork:\n  policy: strict\n",
+		},
+		{
+			name: "absent is fine under permissive",
+			yaml: "agent: test\n",
+		},
+		{
+			name: "empty list under permissive is fine",
+			yaml: "agent: test\nnetwork:\n  tcp: []\n",
+		},
+		{
+			name:    "refused under permissive (explicit)",
+			yaml:    "agent: test\nnetwork:\n  policy: permissive\n  tcp:\n    - \"10.1.2.3:22\"\n",
+			wantErr: "network.tcp",
+		},
+		{
+			name:    "refused under default policy",
+			yaml:    "agent: test\nnetwork:\n  tcp:\n    - \"10.1.2.3:22\"\n",
+			wantErr: "strict",
+		},
+		{
+			name:    "hostname",
+			yaml:    "agent: test\nnetwork:\n  policy: strict\n  tcp:\n    - \"example.com:22\"\n",
+			wantErr: "network.tcp",
+		},
+		{
+			name:    "cidr",
+			yaml:    "agent: test\nnetwork:\n  policy: strict\n  tcp:\n    - \"10.0.0.0/8:22\"\n",
+			wantErr: "network.tcp",
+		},
+		{
+			name:    "port range",
+			yaml:    "agent: test\nnetwork:\n  policy: strict\n  tcp:\n    - \"10.1.2.3:20-30\"\n",
+			wantErr: "network.tcp",
+		},
+		{
+			name:    "wildcard",
+			yaml:    "agent: test\nnetwork:\n  policy: strict\n  tcp:\n    - \"*:22\"\n",
+			wantErr: "network.tcp",
+		},
+		{
+			name:    "unspecified address",
+			yaml:    "agent: test\nnetwork:\n  policy: strict\n  tcp:\n    - \"0.0.0.0:22\"\n",
+			wantErr: "network.tcp",
+		},
+		{
+			name:    "port zero",
+			yaml:    "agent: test\nnetwork:\n  policy: strict\n  tcp:\n    - \"10.1.2.3:0\"\n",
+			wantErr: "network.tcp",
+		},
+		{
+			name:    "port too high",
+			yaml:    "agent: test\nnetwork:\n  policy: strict\n  tcp:\n    - \"10.1.2.3:65536\"\n",
+			wantErr: "network.tcp",
+		},
+		{
+			name:    "missing port",
+			yaml:    "agent: test\nnetwork:\n  policy: strict\n  tcp:\n    - \"10.1.2.3\"\n",
+			wantErr: "network.tcp",
+		},
+		{
+			name:    "ipv6",
+			yaml:    "agent: test\nnetwork:\n  policy: strict\n  tcp:\n    - \"[2001:db8::1]:22\"\n",
+			wantErr: "network.tcp",
+		},
+		{
+			name:    "duplicate",
+			yaml:    "agent: test\nnetwork:\n  policy: strict\n  tcp:\n    - \"10.1.2.3:22\"\n    - \"10.1.2.3:22\"\n",
+			wantErr: "duplicate",
+		},
+		{
+			name:    "not a list of strings",
+			yaml:    "agent: test\nnetwork:\n  policy: strict\n  tcp:\n    - 22\n",
+			wantErr: "tcp",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			os.WriteFile(filepath.Join(dir, "moat.yaml"), []byte(tt.yaml), 0o644)
+			cfg, err := Load(dir)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("expected error containing %q, got: %v", tt.wantErr, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !reflect.DeepEqual(cfg.Network.TCP, tt.want) && !(len(cfg.Network.TCP) == 0 && len(tt.want) == 0) {
+				t.Errorf("Network.TCP = %v, want %v", cfg.Network.TCP, tt.want)
+			}
+		})
+	}
+}
+
 func TestLoadConfigParsesPiBlock(t *testing.T) {
 	dir := t.TempDir()
 	content := `
@@ -2780,5 +2893,18 @@ func TestLoadConfigRejectsBadPiPackage(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "moat.yaml"), []byte(content), 0o644)
 	if _, err := Load(dir); err == nil {
 		t.Fatal("expected Load to reject a local-path pi package")
+	}
+}
+
+func TestNetworkTCPGrantsRefuseNonUnicast(t *testing.T) {
+	for _, ip := range []string{"0.0.0.0", "0.1.2.3", "127.0.0.1", "169.254.1.1", "169.254.169.254", "224.0.0.1", "240.0.0.1", "255.255.255.255"} {
+		t.Run(ip, func(t *testing.T) {
+			dir := t.TempDir()
+			y := "agent: test\nnetwork:\n  policy: strict\n  tcp:\n    - \"" + ip + ":22\"\n"
+			os.WriteFile(filepath.Join(dir, "moat.yaml"), []byte(y), 0o644)
+			if _, err := Load(dir); err == nil || !strings.Contains(err.Error(), "network.tcp") {
+				t.Fatalf("expected network.tcp error for %s, got %v", ip, err)
+			}
+		})
 	}
 }
