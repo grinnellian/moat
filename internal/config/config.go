@@ -269,6 +269,7 @@ type NetworkConfig struct {
 	Rules      []netrules.NetworkRuleEntry `yaml:"rules,omitempty"`
 	KeepPolicy *keep.PolicyConfig          `yaml:"keep_policy,omitempty"`
 	Host       []int                       `yaml:"host,omitempty"` // TCP ports on the host the container may access
+	TCP        []string                    `yaml:"tcp,omitempty"`  // "<IPv4>:<port>" raw-TCP egress grants (strict policy only)
 }
 
 // LLMGatewayConfig configures Keep LLM policy evaluation in the proxy.

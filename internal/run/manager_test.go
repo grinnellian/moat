@@ -18,6 +18,7 @@ import (
 	"github.com/majorcontext/moat/internal/credential"
 	"github.com/majorcontext/moat/internal/daemon"
 	"github.com/majorcontext/moat/internal/deps"
+	"github.com/majorcontext/moat/internal/netrules"
 	"github.com/majorcontext/moat/internal/routing"
 	"github.com/majorcontext/moat/internal/storage"
 )
@@ -889,7 +890,7 @@ func (s *stubRuntime) SidecarManager() container.SidecarManager { return nil }
 func (s *stubRuntime) BuildManager() container.BuildManager     { return nil }
 func (s *stubRuntime) ServiceManager() container.ServiceManager { return nil }
 func (s *stubRuntime) Close() error                             { return nil }
-func (s *stubRuntime) SetupFirewall(context.Context, string, string, int) error {
+func (s *stubRuntime) SetupFirewall(context.Context, string, string, int, []netrules.TCPGrant) error {
 	panic("not implemented")
 }
 

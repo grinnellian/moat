@@ -33,6 +33,7 @@ import (
 	"github.com/majorcontext/moat/internal/container/output"
 	"github.com/majorcontext/moat/internal/id"
 	"github.com/majorcontext/moat/internal/log"
+	"github.com/majorcontext/moat/internal/netrules"
 	"github.com/majorcontext/moat/internal/term"
 	"github.com/majorcontext/moat/internal/ui"
 )
@@ -936,7 +937,7 @@ func versionIsPodman(version types.Version) bool {
 // for Apple containers, this provides sufficient protection.
 // If ip6tables is not available (minimal images), a warning is emitted to stderr
 // but the setup does not fail — the container may not have IPv6 connectivity.
-func (r *DockerRuntime) SetupFirewall(ctx context.Context, containerID string, proxyHost string, proxyPort int) error {
+func (r *DockerRuntime) SetupFirewall(ctx context.Context, containerID string, proxyHost string, proxyPort int, tcpGrants []netrules.TCPGrant) error {
 	// Validate port range
 	if proxyPort < 1 || proxyPort > 65535 {
 		return fmt.Errorf("invalid proxy port %d: must be between 1 and 65535", proxyPort)
@@ -953,64 +954,10 @@ func (r *DockerRuntime) SetupFirewall(ctx context.Context, containerID string, p
 	// Use -w flag to wait for xtables lock (avoids exit code 4 from lock contention)
 	// Use conntrack module instead of state for better container compatibility
 	_ = proxyHost // See function comment for why this is unused
-	script := fmt.Sprintf(`
-		# Verify iptables is available
-		if ! command -v iptables >/dev/null 2>&1; then
-			echo "ERROR: iptables not found - container will not be firewalled" >&2
-			exit 1
-		fi
-
-		# Flush existing rules (may fail if no rules exist, that's OK)
-		iptables -w -F OUTPUT 2>/dev/null || true
-
-		# Allow loopback
-		iptables -w -A OUTPUT -o lo -j ACCEPT
-
-		# Allow established/related connections (conntrack more reliable than state in containers)
-		iptables -w -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-
-		# Allow DNS (UDP 53) - needed for initial hostname resolution
-		iptables -w -A OUTPUT -p udp --dport 53 -j ACCEPT
-
-		# Allow traffic to proxy port (destination IP not filtered - see function comment)
-		iptables -w -A OUTPUT -p tcp --dport %d -j ACCEPT
-
-		# Drop all other outbound traffic
-		iptables -w -A OUTPUT -j DROP
-
-		# Mirror rules for IPv6 to prevent bypass via AAAA records.
-		# Prefer ip6tables-legacy for nf_tables compatibility on some
-		# container kernels that lack nf_tables modules.
-		# The DROP-all rule also blocks ICMPv6 Neighbor Solicitation, which
-		# effectively disables IPv6 for the container — this is intentional;
-		# fully blocked is better than partially open.
-		if command -v ip6tables-legacy >/dev/null 2>&1; then
-			IP6T=ip6tables-legacy
-		elif command -v ip6tables >/dev/null 2>&1; then
-			IP6T=ip6tables
-		else
-			echo "WARN: ip6tables not found - IPv6 traffic will not be firewalled" >&2
-			IP6T=""
-		fi
-		if [ -n "$IP6T" ]; then
-			# Use -w 5 (5-second timeout) instead of bare -w (wait forever).
-			# On some CI hosts the ip6_tables kernel module is absent, causing
-			# ip6tables to block indefinitely on the xtables lock.
-			if $IP6T -w 5 -F OUTPUT 2>/dev/null &&
-			   $IP6T -w 5 -A OUTPUT -o lo -j ACCEPT &&
-			   $IP6T -w 5 -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT &&
-			   $IP6T -w 5 -A OUTPUT -p udp --dport 53 -j ACCEPT &&
-			   $IP6T -w 5 -A OUTPUT -p tcp --dport %d -j ACCEPT &&
-			   $IP6T -w 5 -A OUTPUT -j DROP; then
-				: # IPv6 firewall installed
-			else
-				# Flush partial rules so the container isn't left with an
-				# incomplete policy (e.g. ACCEPT lo without a final DROP).
-				$IP6T -w 5 -F OUTPUT 2>/dev/null || true
-				echo "WARN: ip6tables rules failed — IPv6 traffic will not be firewalled" >&2
-			fi
-		fi
-	`, proxyPort, proxyPort)
+	script, err := buildDockerFirewallScript(proxyPort, tcpGrants)
+	if err != nil {
+		return err
+	}
 
 	execConfig := container.ExecOptions{
 		Cmd:          []string{"sh", "-c", script},

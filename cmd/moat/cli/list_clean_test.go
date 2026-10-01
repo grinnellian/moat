@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/majorcontext/moat/internal/container"
+	"github.com/majorcontext/moat/internal/netrules"
 )
 
 // listCleanStubRuntime is a minimal mock of container.Runtime for testing
@@ -100,7 +101,7 @@ func (s *listCleanStubRuntime) ServiceManager() container.ServiceManager {
 	panic("unexpected call to ServiceManager")
 }
 func (s *listCleanStubRuntime) Close() error { panic("unexpected call to Close") }
-func (s *listCleanStubRuntime) SetupFirewall(ctx context.Context, id string, proxyHost string, proxyPort int) error {
+func (s *listCleanStubRuntime) SetupFirewall(ctx context.Context, id string, proxyHost string, proxyPort int, tcpGrants []netrules.TCPGrant) error {
 	panic("unexpected call to SetupFirewall")
 }
 

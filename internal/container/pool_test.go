@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/majorcontext/moat/internal/netrules"
 )
 
 // newTestPool creates a RuntimePool for testing, skipping if no runtime is available.
@@ -141,7 +143,7 @@ func (s *poolStubRuntime) NetworkManager() NetworkManager { return nil }
 func (s *poolStubRuntime) SidecarManager() SidecarManager { return nil }
 func (s *poolStubRuntime) BuildManager() BuildManager     { return nil }
 func (s *poolStubRuntime) ServiceManager() ServiceManager { return nil }
-func (s *poolStubRuntime) SetupFirewall(context.Context, string, string, int) error {
+func (s *poolStubRuntime) SetupFirewall(context.Context, string, string, int, []netrules.TCPGrant) error {
 	panic("not implemented")
 }
 
